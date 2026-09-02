@@ -211,6 +211,7 @@ tr:last-child td{border-bottom:none}
     <!-- Status Bar -->
     <div class="status-bar idle" id="statusBar">
         <span id="statusText">⏳ 等待操作</span>
+        <span id="elapsedTime" style="margin-left:auto;font-size:.75rem;opacity:.8"></span>
     </div>
 
     <!-- Controls -->
@@ -288,6 +289,7 @@ tr:last-child td{border-bottom:none}
             <input id="fLatency" type="number" placeholder="延迟 ≤ ms" oninput="applyFilter()">
             <input id="fSpeed" type="number" placeholder="速度 ≥ MB/s" step="0.1" oninput="applyFilter()">
             <button class="btn btn-outline btn-sm" onclick="clearFilter()">清除筛选</button>
+            <button class="btn btn-outline btn-sm" onclick="exportCSV()">📥 导出 CSV</button>
         </div>
     </div>
     <div class="table-wrap" id="tableWrap">
@@ -313,8 +315,13 @@ tr:last-child td{border-bottom:none}
     <!-- Log -->
     <div class="log-section">
         <div class="log-header">
-            <h3>📝 运行日志</h3>
-            <span style="font-size:.72rem;color:var(--text2)" id="logCount">0 条</span>
+            <h3>📝 运行日志 <span style="font-size:.72rem;color:var(--text2);font-weight:normal" id="logCount">0 条</span></h3>
+            <div style="display:flex;align-items:center;gap:10px">
+                <label style="font-size:.72rem;color:var(--text2);display:flex;align-items:center;gap:4px;cursor:pointer">
+                    <input type="checkbox" id="autoScroll" checked onchange="toggleAutoScroll()" style="accent-color:var(--primary)"> 自动滚动
+                </label>
+                <button class="btn btn-outline btn-sm" onclick="clearLog()">🗑 清空</button>
+            </div>
         </div>
         <div class="log-box" id="logBox"></div>
     </div>
@@ -324,7 +331,8 @@ tr:last-child td{border-bottom:none}
 /* ========== State ========== */
 var ws, reconnTimer, allResults = [], filteredResults = [];
 var sortCol = -1, sortAsc = true, logLines = 0;
-var isRunning = false;
+var isRunning = false, autoScrollEnabled = true;
+var testStartTime = 0, elapsedTimer = null;
 
 /* ========== Utils ========== */
 function $(id){ return document.getElementById(id) }
@@ -453,10 +461,12 @@ function updateProgress(data){
         $('progressFill').textContent = pct + '%';
     }
     
-    // Status text
+    // Status text with elapsed time
     var statusMsg = '🔄 ' + stage;
     if(total > 0) statusMsg += '  ' + current + ' / ' + total;
     if(avail > 0) statusMsg += '  可用: ' + avail;
+    var elapsed = document.getElementById('elapsedTime');
+    if(elapsed && elapsed.textContent) statusMsg += '  ⏱ ' + elapsed.textContent;
     setStatus('running', statusMsg);
     
     // Live results during download phase
@@ -528,10 +538,13 @@ function setRunning(running){
     $('btnStart').innerHTML = running ? '⏳ 测速中...' : '▶ 开始测速';
     $('btnStop').style.display = running ? '' : 'none';
     if(running){
+        startTimer();
         $('progressWrap').style.display = 'block';
         $('progressFill').style.width = '0%';
         $('progressFill').textContent = '0%';
         setStatus('running', '🔄 准备中...');
+    } else {
+        stopTimer();
     }
 }
 
@@ -709,6 +722,10 @@ function fallbackCopy(text){
 }
 
 /* ========== Log ========== */
+function toggleAutoScroll(){
+    autoScrollEnabled = $('autoScroll').checked;
+}
+
 function addLog(msg, cls){
     cls = cls || '';
     var box = $('logBox');
@@ -738,17 +755,61 @@ function addLog(msg, cls){
         logLines--;
     }
     
-    // Auto scroll
-    box.scrollTop = box.scrollHeight;
+    // Auto scroll (only if enabled)
+    if(autoScrollEnabled){
+        box.scrollTop = box.scrollHeight;
+    }
     
     // Update count
     $('logCount').textContent = logLines + ' 条';
+}
+
+/* ========== Elapsed Timer ========== */
+function startTimer(){
+    testStartTime = Date.now();
+    if(elapsedTimer) clearInterval(elapsedTimer);
+    elapsedTimer = setInterval(updateElapsed, 1000);
+    updateElapsed();
+}
+function stopTimer(){
+    if(elapsedTimer){ clearInterval(elapsedTimer); elapsedTimer = null; }
+}
+function updateElapsed(){
+    if(!testStartTime) return;
+    var sec = Math.floor((Date.now() - testStartTime) / 1000);
+    var m = Math.floor(sec / 60);
+    var s = sec % 60;
+    var el = document.getElementById('elapsedTime');
+    if(el) el.textContent = m > 0 ? m + '分' + s + '秒' : sec + '秒';
 }
 
 function clearLog(){
     $('logBox').innerHTML = '';
     logLines = 0;
     $('logCount').textContent = '0 条';
+    $('elapsedTime').textContent = '';
+    testStartTime = 0;
+}
+
+/* ========== Export CSV ========== */
+function exportCSV(){
+    var data = filteredResults.length > 0 ? filteredResults : allResults;
+    if(data.length === 0){ showToast('暂无数据可导出', 'info'); return; }
+    var header = 'IP,延迟(ms),速度(MB/s),丢包率,地区';
+    var rows = data.map(function(r){
+        return [r.ip, r.avg_latency.toFixed(1), r.download_speed.toFixed(2), (r.loss_rate*100).toFixed(1)+'%', r.region||'-'].join(',');
+    });
+    var csv = '\uFEFF' + header + '\n' + rows.join('\n') + '\n';
+    var blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'cfstd-result-' + new Date().toISOString().slice(0,10) + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('已导出 ' + data.length + ' 条结果', 'success');
 }
 
 /* ========== Toast ========== */
