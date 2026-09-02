@@ -10,16 +10,24 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Lyxot/CloudflareSpeedLocalTest/utils"
+	"github.com/Lyxot/CloudflareSpeedTestDNS/utils"
 )
 
 var gistMu sync.Mutex // 防止并发上传创建多个 Gist
 
 const (
-	gistIDFile     = ".gist_id"   // 保存 Gist ID 的本地文件
-	gistFileName   = "ips.txt"    // Gist 中的文件名（固定）
-	gistDesc       = "CloudflareSpeedLocalTest - IP List" // Gist 描述（用于查找已有 Gist）
+	gistFileName = "ips.txt"                            // Gist 中的文件名（固定）
+	gistDesc     = "CloudflareSpeedLocalTest - IP List" // Gist 描述
 )
+
+// getGistIDFile 返回 Gist ID 持久化文件路径
+// 优先环境变量 GIST_ID_FILE，默认 /app/data/.gist_id（Docker 挂载目录）
+func getGistIDFile() string {
+	if v := os.Getenv("GIST_ID_FILE"); v != "" {
+		return v
+	}
+	return "/app/data/.gist_id"
+}
 
 type GistFile struct {
 	Content string `json:"content"`
@@ -38,16 +46,26 @@ type GistResponse struct {
 
 // readGistID 从本地文件读取已保存的 Gist ID
 func readGistID() string {
-	data, err := os.ReadFile(gistIDFile)
+	data, err := os.ReadFile(getGistIDFile())
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(data))
 }
 
-// saveGistID 保存 Gist ID 到本地文件
+// saveGistID 保存 Gist ID 到本地文件（自动创建目录）
 func saveGistID(id string) {
-	os.WriteFile(gistIDFile, []byte(id), 0644)
+	f := getGistIDFile()
+	dir := f[:strings.LastIndex(f, "/")]
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		fmt.Printf("ERROR: 创建 Gist ID 目录失败: %v (路径: %s)\n", err, f)
+		return
+	}
+	if err := os.WriteFile(f, []byte(id), 0644); err != nil {
+		fmt.Printf("ERROR: 保存 Gist ID 失败: %v (路径: %s)\n", err, f)
+		return
+	}
+	fmt.Printf("OK: Gist ID 已保存: %s -> %s\n", id, f)
 }
 
 // deleteGist 删除指定 ID 的 Gist

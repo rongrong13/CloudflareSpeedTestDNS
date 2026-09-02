@@ -5,6 +5,20 @@ services:
     image: cloudflare-speed-localtest:latest
     container_name: cfstd
     restart: unless-stopped
-    network_mode: host
+    # Bridge 网络模式（指定固定 IP 需自定义网络）
+    # network_mode: host  # 如果用 host 模式取消注释
+    networks:
+      - cfstd_net
+    volumes:
+      - ./data:/app/data   # 持久化 Gist ID 等数据
     environment:
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - TZ=Asia/Shanghai
+
+networks:
+  cfstd_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+          gateway: 172.20.0.1
