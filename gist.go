@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Lyxot/CloudflareSpeedTestDNS/utils"
+	"github.com/Lyxot/CloudflareSpeedLocalTest/utils"
 )
 
 var gistMu sync.Mutex // 防止并发上传创建多个 Gist
@@ -18,7 +18,7 @@ var gistMu sync.Mutex // 防止并发上传创建多个 Gist
 const (
 	gistIDFile     = ".gist_id"   // 保存 Gist ID 的本地文件
 	gistFileName   = "ips.txt"    // Gist 中的文件名（固定）
-	gistDesc       = "CloudflareSpeedTestDNS - IP List" // Gist 描述（用于查找已有 Gist）
+	gistDesc       = "CloudflareSpeedLocalTest - IP List" // Gist 描述（用于查找已有 Gist）
 )
 
 type GistFile struct {
@@ -236,7 +236,7 @@ func cleanupOldGists(token string) int {
 		if g.ID == savedID {
 			continue // 跳过当前使用的 Gist
 		}
-		if strings.Contains(g.Description, "CloudflareSpeedTestDNS") || strings.Contains(g.Description, "Speed Test Results") {
+		if strings.Contains(g.Description, "CloudflareSpeedLocalTest") || strings.Contains(g.Description, "Speed Test Results") {
 			deleteGist(token, g.ID)
 			deleted++
 		}
