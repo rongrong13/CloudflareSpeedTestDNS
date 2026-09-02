@@ -82,6 +82,7 @@ type WSConfigRequest struct {
 	TestCount  int     `json:"test_count"`
 	PrintNum   int     `json:"print_num"`
 	DisableDL  bool    `json:"disable_download"`
+	Routines   int     `json:"routines"`
 }
 
 // WSScheduleRequest 客户端发来的定时任务配置
@@ -97,6 +98,7 @@ var (
 	progress        SpeedTestProgress
 	mu              sync.RWMutex
 	clients         []*websocket.Conn
+	wsWriteMu       sync.Mutex // gorilla/websocket WriteMessage 非线程安全，需全局写锁
 	webTestLock     sync.Mutex
 	scheduleEnabled bool
 	scheduleHours   = 6 // 默认6小时
@@ -126,7 +128,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	for _, line := range getLogHistory() {
 		m := map[string]string{"type": "log", "msg": line}
 		data, _ := json.Marshal(m)
-		conn.WriteMessage(websocket.TextMessage, data)
+		safeWrite(conn, data)
 	}
 
 	// 心跳：服务端每 30s ping（用 WriteControl 避免与 broadcast 并发写冲突）
@@ -205,6 +207,12 @@ func applyWebConfig(cfg *WSConfigRequest) {
 	}
 	conf.CurrentConfig.DisableDownload = cfg.DisableDL
 	task.Disable = cfg.DisableDL
+	if cfg.Routines > 0 {
+		if cfg.Routines > 100 { cfg.Routines = 100 }
+		if cfg.Routines < 1 { cfg.Routines = 1 }
+		conf.CurrentConfig.Routines = cfg.Routines
+		task.Routines = cfg.Routines
+	}
 }
 
 func applySchedule(req *WSScheduleRequest) {
@@ -259,9 +267,11 @@ func broadcastScheduleState() {
 	}
 	data, _ := json.Marshal(msg)
 	mu.RLock()
-	defer mu.RUnlock()
-	for _, client := range clients {
-		client.WriteMessage(websocket.TextMessage, data)
+	conns := make([]*websocket.Conn, len(clients))
+	copy(conns, clients)
+	mu.RUnlock()
+	for _, client := range conns {
+		safeWrite(client, data)
 	}
 }
 
@@ -343,8 +353,7 @@ func runWebSpeedTest() {
 
 func sendProgress(conn *websocket.Conn) {
 	mu.RLock()
-	defer mu.RUnlock()
-	conn.WriteJSON(progress)
+	progressData, _ := json.Marshal(progress)
 	// 同时发送定时任务状态
 	msg := map[string]interface{}{
 		"type":           "schedule",
@@ -354,12 +363,16 @@ func sendProgress(conn *websocket.Conn) {
 		"next_test_unix": nextTestTime.Unix(),
 		"now_unix":       time.Now().Unix(),
 	}
-	data, _ := json.Marshal(msg)
-	conn.WriteMessage(websocket.TextMessage, data)
+	scheduleData, _ := json.Marshal(msg)
+	mu.RUnlock()
+	safeWrite(conn, progressData)
+	safeWrite(conn, scheduleData)
 }
 
-// safeWrite 安全地写入 WebSocket，失败时静默忽略
+// safeWrite 安全地写入 WebSocket，使用全局写锁防止并发写导致 panic
 func safeWrite(conn *websocket.Conn, data []byte) bool {
+	wsWriteMu.Lock()
+	defer wsWriteMu.Unlock()
 	conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	err := conn.WriteMessage(websocket.TextMessage, data)
 	conn.SetWriteDeadline(time.Time{}) // 清除 deadline

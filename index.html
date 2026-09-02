@@ -239,6 +239,10 @@ tr:last-child td{border-bottom:none}
                 <option value="1">是</option>
             </select>
         </div>
+        <div class="form-group">
+            <label>并发数</label>
+            <input type="number" id="cRoutines" value="200" min="1" max="100" title="延迟测速并发数，上限100">
+        </div>
         <div class="start-area">
             <button class="btn btn-primary" id="btnStart" onclick="startTest()">▶ 开始测速</button>
             <button class="btn btn-outline" id="btnStop" onclick="stopTest()" style="display:none;background:var(--error);color:#fff;border-color:var(--error)">⏹ 停止</button>
@@ -408,12 +412,15 @@ function wsSend(type, data){
 }
 
 function getCfg(){
+    var r = parseInt($('cRoutines').value) || 200;
+    if(r > 100) r = 100; if(r < 1) r = 1;
     return {
         max_delay: parseInt($('cDelay').value) || 9999,
         min_speed: parseFloat($('cSpeed').value) || 0,
         test_count: parseInt($('cCount').value) || 10,
         print_num: parseInt($('cPrint').value) || 50,
-        disable_download: $('cDisableDL').value === '1'
+        disable_download: $('cDisableDL').value === '1',
+        routines: r
     };
 }
 
@@ -892,6 +899,7 @@ function saveCfg(){
         count: $('cCount').value,
         print: $('cPrint').value,
         disableDL: $('cDisableDL').value,
+        routines: $('cRoutines').value,
         autoGist: $('autoGist').checked,
         schedEnable: $('schedEnable').checked,
         schedInterval: $('schedInterval').value,
@@ -908,6 +916,7 @@ function loadCfg(){
         if(cfg.count) $('cCount').value = cfg.count;
         if(cfg.print) $('cPrint').value = cfg.print;
         if(cfg.disableDL) $('cDisableDL').value = cfg.disableDL;
+        if(cfg.routines) $('cRoutines').value = cfg.routines;
         if(cfg.autoGist) $('autoGist').checked = true;
         if(cfg.schedEnable) $('schedEnable').checked = true;
         if(cfg.schedInterval) $('schedInterval').value = cfg.schedInterval;
