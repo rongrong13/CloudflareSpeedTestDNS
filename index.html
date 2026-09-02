@@ -570,11 +570,14 @@ function setRunning(running){
 }
 
 /* ========== Gist Upload ========== */
+var gistUploading = false;
 function uploadGist(){
+    if(gistUploading) return;
     if(allResults.length === 0){
         showToast('暂无结果可上传', 'info');
         return;
     }
+    gistUploading = true;
     // Build IP list (max 50)
     var ips = [];
     var data = filteredResults.length > 0 ? filteredResults : allResults;
@@ -589,6 +592,7 @@ function uploadGist(){
     xhr.setRequestHeader('Content-Type', 'application/json');
     xhr.onreadystatechange = function(){
         if(xhr.readyState === 4){
+            gistUploading = false;
             if(xhr.status === 200){
                 var resp = JSON.parse(xhr.responseText);
                 if(resp.url){

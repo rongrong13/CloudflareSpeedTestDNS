@@ -2,16 +2,23 @@ package main
 
 import (
 	"bytes"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/Lyxot/CloudflareSpeedTestDNS/utils"
+)
+
+var gistMu sync.Mutex // 防止并发上传创建多个 Gist
+
+const (
+	gistIDFile     = ".gist_id"   // 保存 Gist ID 的本地文件
+	gistFileName   = "ips.txt"    // Gist 中的文件名（固定）
+	gistDesc       = "CloudflareSpeedTestDNS - IP List" // Gist 描述（用于查找已有 Gist）
 )
 
 type GistFile struct {
@@ -29,129 +36,210 @@ type GistResponse struct {
 	ID      string `json:"id"`
 }
 
-func uploadToGist(token string, files map[string]string) (string, error) {
+// readGistID 从本地文件读取已保存的 Gist ID
+func readGistID() string {
+	data, err := os.ReadFile(gistIDFile)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// saveGistID 保存 Gist ID 到本地文件
+func saveGistID(id string) {
+	os.WriteFile(gistIDFile, []byte(id), 0644)
+}
+
+// deleteGist 删除指定 ID 的 Gist
+func deleteGist(token, gistID string) error {
+	req, err := http.NewRequest("DELETE", "https://api.github.com/gists/"+gistID, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "token "+token)
+	resp, err := (&http.Client{}).Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+
+// updateOrCreateGist 更新已有的 Gist，或创建新的
+// 核心逻辑：始终只有一个 Gist 文件 ips.txt，内容为每行一个 IP
+func updateOrCreateGist(token string, ipContent string) (string, error) {
+	files := map[string]GistFile{gistFileName: {Content: ipContent}}
+
+	gistID := readGistID()
+
+	// 如果有已保存的 Gist ID，尝试更新
+	if gistID != "" {
+		url, err := patchGist(token, gistID, files)
+		if err == nil {
+			utils.LogInfo("Gist 更新成功: %s", url)
+			return url, nil
+		}
+		utils.LogWarn("更新 Gist 失败（将创建新的）: %v", err)
+	}
+
+	// 创建新的 Gist
+	url, id, err := createGist(token, files)
+	if err != nil {
+		return "", err
+	}
+	saveGistID(id)
+	utils.LogInfo("Gist 创建成功: %s", url)
+	return url, nil
+}
+
+// patchGist 更新已有 Gist 的内容
+func patchGist(token string, gistID string, files map[string]GistFile) (string, error) {
 	gist := GistRequest{
-		Description: "Cloudflare CDN Speed Test Results",
-		Public:      false,
-		Files:       make(map[string]GistFile),
+		Description: gistDesc,
+		Files:       files,
 	}
-	for filename, content := range files {
-		gist.Files[filename] = GistFile{Content: content}
-	}
-	if len(gist.Files) == 0 {
-		return "", fmt.Errorf("no result files to upload")
-	}
+	jsonData, _ := json.Marshal(gist)
 
-	jsonData, err := json.Marshal(gist)
+	req, err := http.NewRequest("PATCH", "https://api.github.com/gists/"+gistID, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return "", fmt.Errorf("JSON 编码失败: %v", err)
-	}
-
-	req, err := http.NewRequest("POST", "https://api.github.com/gists", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", fmt.Errorf("创建请求失败: %v", err)
+		return "", err
 	}
 	req.Header.Set("Authorization", "token "+token)
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := (&http.Client{}).Do(req)
 	if err != nil {
-		return "", fmt.Errorf("发送请求失败: %v", err)
+		return "", err
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("读取响应失败: %v", err)
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("PATCH 失败 (%d): %s", resp.StatusCode, string(body))
 	}
+
+	var r GistResponse
+	json.Unmarshal(body, &r)
+	return r.HTMLURL, nil
+}
+
+// createGist 创建新的 Gist
+func createGist(token string, files map[string]GistFile) (string, string, error) {
+	gist := GistRequest{
+		Description: gistDesc,
+		Public:      false,
+		Files:       files,
+	}
+	jsonData, _ := json.Marshal(gist)
+
+	req, err := http.NewRequest("POST", "https://api.github.com/gists", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("Authorization", "token "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := (&http.Client{}).Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusCreated {
-		return "", fmt.Errorf("Gist 创建失败 (%d): %s", resp.StatusCode, string(body))
+		return "", "", fmt.Errorf("创建失败 (%d): %s", resp.StatusCode, string(body))
 	}
 
-	var gistResp GistResponse
-	if err := json.Unmarshal(body, &gistResp); err != nil {
-		return "", fmt.Errorf("解析响应失败: %v", err)
-	}
-	return gistResp.HTMLURL, nil
+	var r GistResponse
+	json.Unmarshal(body, &r)
+	return r.HTMLURL, r.ID, nil
 }
 
-// extractIPsFromCSV 从 CSV 文件中提取第一列（IP 地址），每行一个，最多50个
-func extractIPsFromCSV(path string) (string, error) {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
+// uploadIPsToGist 接收 IP 列表（每行一个），上传到 Gist
+// 这是 /api/gist 端点调用的函数
+func uploadIPsToGist(token string, ipContent string) (string, error) {
+	gistMu.Lock()
+	defer gistMu.Unlock()
+	if token == "" {
+		return "", fmt.Errorf("未配置 GITHUB_TOKEN")
 	}
-	content, err := os.ReadFile(absPath)
-	if err != nil {
-		return "", err
+	if strings.TrimSpace(ipContent) == "" {
+		return "", fmt.Errorf("IP 列表为空")
 	}
-
-	reader := csv.NewReader(strings.NewReader(string(content)))
-	records, err := reader.ReadAll()
-	if err != nil {
-		return "", err
-	}
-
-	var ips []string
-	for i, record := range records {
-		if i == 0 { // 跳过表头
-			continue
-		}
-		if len(record) > 0 && record[0] != "" {
-			ips = append(ips, record[0])
-		}
-		if len(ips) >= 50 { // 最多保留50个IP
-			break
-		}
-	}
-	if len(ips) == 0 {
-		return "", nil
-	}
-	return strings.Join(ips, "\n") + "\n", nil
+	return updateOrCreateGist(token, ipContent)
 }
 
-func collectResultFiles() map[string]string {
-	files := make(map[string]string)
-	candidates := []string{utils.Output}
-	for _, name := range []string{"result.csv", "result_ipv4.csv", "result_ipv6.csv"} {
-		candidates = append(candidates, name)
-	}
-	seen := make(map[string]bool)
-	for _, path := range candidates {
-		if path == "" || seen[path] {
-			continue
-		}
-		seen[path] = true
-
-		// 从 CSV 提取纯 IP 列表
-		ipList, err := extractIPsFromCSV(path)
-		if err != nil || ipList == "" {
-			continue
-		}
-
-		// 文件名：result.csv → ips.txt, result_ipv4.csv → ips_ipv4.txt, result_ipv6.csv → ips_ipv6.txt
-		base := strings.TrimSuffix(filepath.Base(path), ".csv")
-		gistName := strings.Replace(base, "result", "ips", 1) + ".txt"
-		files[gistName] = ipList
-	}
-	return files
-}
-
+// uploadResultsIfNeeded CLI 模式：从 CSV 提取 IP 上传到 Gist
 func uploadResultsIfNeeded(token string) {
 	if token == "" {
 		fmt.Println("未配置 GITHUB_TOKEN，跳过 Gist 上传")
 		return
 	}
-	files := collectResultFiles()
-	if len(files) == 0 {
-		fmt.Println("未找到测速结果文件，跳过 Gist 上传")
+	// 读取实际输出文件
+	outputFile := utils.Output
+	if outputFile == "" {
+		outputFile = "result.csv"
+	}
+	content, err := os.ReadFile(outputFile)
+	if err != nil {
+		fmt.Printf("读取结果文件失败: %v\n", err)
 		return
 	}
-	url, err := uploadToGist(token, files)
+	// 简单解析 CSV，提取第一列 IP
+	lines := strings.Split(string(content), "\n")
+	var ips []string
+	for i, line := range lines {
+		if i == 0 || strings.TrimSpace(line) == "" {
+			continue // 跳过表头和空行
+		}
+		parts := strings.SplitN(line, ",", 2)
+		if len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
+			ips = append(ips, strings.TrimSpace(parts[0]))
+		}
+		if len(ips) >= 50 {
+			break
+		}
+	}
+	if len(ips) == 0 {
+		fmt.Println("未找到 IP 结果，跳过 Gist 上传")
+		return
+	}
+	ipContent := strings.Join(ips, "\n") + "\n"
+	url, err := uploadIPsToGist(token, ipContent)
 	if err != nil {
 		fmt.Printf("上传到 Gist 失败: %v\n", err)
 		return
 	}
 	fmt.Printf("✅ 测速结果已上传到 Gist: %s\n", url)
+}
+
+// cleanupOldGists 清理描述匹配的旧 Gist（可选，用于批量清理）
+func cleanupOldGists(token string) int {
+	req, _ := http.NewRequest("GET", "https://api.github.com/gists?per_page=100", nil)
+	req.Header.Set("Authorization", "token "+token)
+	resp, err := (&http.Client{}).Do(req)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var gists []struct {
+		ID          string `json:"id"`
+		Description string `json:"description"`
+	}
+	json.Unmarshal(body, &gists)
+
+	deleted := 0
+	savedID := readGistID()
+	for _, g := range gists {
+		if g.ID == savedID {
+			continue // 跳过当前使用的 Gist
+		}
+		if strings.Contains(g.Description, "CloudflareSpeedTestDNS") || strings.Contains(g.Description, "Speed Test Results") {
+			deleteGist(token, g.ID)
+			deleted++
+		}
+	}
+	return deleted
 }

@@ -349,18 +349,6 @@ func runWebSpeedTest() {
 	}
 	log.Printf("✅ 测速完成，共 %d 个结果\n", len(results))
 	updateProgressFull("完成", len(results), len(results), len(results), 0, results)
-
-	// Web 模式也自动上传 Gist（与 CLI 模式行为一致）
-	gistToken := conf.GistToken
-	if gistToken == "" {
-		gistToken = os.Getenv("GITHUB_TOKEN")
-	}
-	if conf.EnableGist || gistToken != "" {
-		go func() {
-			utils.LogInfo("正在上传测速结果到 Gist...")
-			uploadResultsIfNeeded(gistToken)
-		}()
-	}
 }
 
 func sendProgress(conn *websocket.Conn) {
@@ -537,8 +525,7 @@ func gistAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	files := map[string]string{"ips.txt": req.Content}
-	url, err := uploadToGist(gistToken, files)
+	url, err := uploadIPsToGist(gistToken, req.Content)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
