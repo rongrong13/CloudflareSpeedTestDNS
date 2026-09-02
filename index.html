@@ -275,10 +275,17 @@ tr:last-child td{border-bottom:none}
         <span class="schedule-info" id="schedInfo">定时未开启</span>
     </div>
 
-    <!-- Gist -->
+    <!-- Gist + History -->
     <div class="gist-card">
         <button class="btn btn-success btn-sm" onclick="uploadGist()">📤 上传 Gist</button>
-        <span class="gist-info" id="gistInfo">测速完成后可一键上传 IP 列表到 GitHub Gist</span>
+        <label style="font-size:.78rem;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer">
+            <input type="checkbox" id="autoGist" style="accent-color:var(--success)"> 测速完成自动上传
+        </label>
+        <span class="gist-info" id="gistInfo" style="flex:1">测速完成后可一键上传 IP 列表到 GitHub Gist</span>
+        <select id="historySelect" onchange="loadHistory()" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:.75rem;background:var(--card);color:var(--text);max-width:180px">
+            <option value="">📂 历史记录</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="saveHistory()">💾 保存本次</button>
     </div>
 
     <!-- Results Table -->
@@ -440,10 +447,17 @@ function updateProgress(data){
         // Done
         setRunning(false);
         $('progressWrap').style.display = 'none';
-        setStatus('done', '✅ ' + stage + (results.length ? ' — 共 ' + results.length + ' 个结果' : ''));
+        var elapsed = document.getElementById('elapsedTime');
+        var elapsedStr = elapsed && elapsed.textContent ? '  ⏱ ' + elapsed.textContent : '';
+        setStatus('done', '✅ ' + stage + (results.length ? ' — 共 ' + results.length + ' 个结果' : '') + elapsedStr);
         if(results.length > 0){
             allResults = results;
             applyFilter();
+            // Auto upload to Gist
+            if($('autoGist') && $('autoGist').checked){
+                addLog('[系统] 自动上传 Gist...', 'info');
+                uploadGist();
+            }
         }
         return;
     }
@@ -791,6 +805,52 @@ function clearLog(){
     testStartTime = 0;
 }
 
+/* ========== History (localStorage) ========== */
+function getHistory(){ try { return JSON.parse(localStorage.getItem('cfstd_history') || '[]'); } catch(e){ return []; } }
+function setHistory(arr){ localStorage.setItem('cfstd_history', JSON.stringify(arr)); }
+
+function refreshHistoryList(){
+    var sel = $('historySelect');
+    var hist = getHistory();
+    // keep first empty option
+    while(sel.options.length > 1) sel.remove(1);
+    for(var i = 0; i < hist.length; i++){
+        var opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = hist[i].time + ' (' + hist[i].results.length + '个IP)';
+        sel.appendChild(opt);
+    }
+}
+
+function saveHistory(){
+    if(allResults.length === 0){ showToast('暂无结果可保存', 'info'); return; }
+    var hist = getHistory();
+    var now = new Date();
+    var timeStr = now.toLocaleString('zh-CN', {hour12:false, month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
+    hist.unshift({ time: timeStr, results: allResults });
+    if(hist.length > 5) hist = hist.slice(0, 5);
+    setHistory(hist);
+    refreshHistoryList();
+    showToast('已保存到历史记录', 'success');
+}
+
+function loadHistory(){
+    var idx = $('historySelect').value;
+    if(idx === '') return;
+    var hist = getHistory();
+    var item = hist[parseInt(idx)];
+    if(!item) return;
+    allResults = item.results;
+    filteredResults = [];
+    $('fIP').value = '';
+    $('fLatency').value = '';
+    $('fSpeed').value = '';
+    applyFilter();
+    setStatus('done', '📂 已加载历史: ' + item.time + ' — 共 ' + item.results.length + ' 个结果');
+    addLog('[系统] 加载历史记录: ' + item.time + ', ' + item.results.length + ' 个结果', 'info');
+    $('historySelect').value = '';
+}
+
 /* ========== Export CSV ========== */
 function exportCSV(){
     var data = filteredResults.length > 0 ? filteredResults : allResults;
@@ -823,8 +883,50 @@ function showToast(msg, type){
     setTimeout(function(){ if(div.parentNode) div.remove() }, 1600);
 }
 
+/* ========== Config Persistence (localStorage) ========== */
+var CONFIG_KEY = 'cfstd_config';
+function saveCfg(){
+    var cfg = {
+        delay: $('cDelay').value,
+        speed: $('cSpeed').value,
+        count: $('cCount').value,
+        print: $('cPrint').value,
+        disableDL: $('cDisableDL').value,
+        autoGist: $('autoGist').checked,
+        schedEnable: $('schedEnable').checked,
+        schedInterval: $('schedInterval').value,
+        autoScroll: $('autoScroll').checked
+    };
+    try { localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg)); } catch(e){}
+}
+function loadCfg(){
+    try {
+        var cfg = JSON.parse(localStorage.getItem(CONFIG_KEY));
+        if(!cfg) return;
+        if(cfg.delay) $('cDelay').value = cfg.delay;
+        if(cfg.speed !== undefined) $('cSpeed').value = cfg.speed;
+        if(cfg.count) $('cCount').value = cfg.count;
+        if(cfg.print) $('cPrint').value = cfg.print;
+        if(cfg.disableDL) $('cDisableDL').value = cfg.disableDL;
+        if(cfg.autoGist) $('autoGist').checked = true;
+        if(cfg.schedEnable) $('schedEnable').checked = true;
+        if(cfg.schedInterval) $('schedInterval').value = cfg.schedInterval;
+        if(cfg.autoScroll !== undefined){ $('autoScroll').checked = cfg.autoScroll; autoScrollEnabled = cfg.autoScroll; }
+    } catch(e){}
+}
+// Auto-save config on change
+document.querySelectorAll('.controls input, .controls select').forEach(function(el){
+    el.addEventListener('change', saveCfg);
+});
+document.getElementById('autoGist').addEventListener('change', saveCfg);
+document.getElementById('autoScroll').addEventListener('change', saveCfg);
+document.getElementById('schedEnable').addEventListener('change', saveCfg);
+document.getElementById('schedInterval').addEventListener('change', saveCfg);
+
 /* ========== Init ========== */
 initTheme();
+loadCfg();
+refreshHistoryList();
 connect();
 </script>
 </body>
