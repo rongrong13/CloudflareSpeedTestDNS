@@ -1,4 +1,22 @@
-```
 # Binaries
+*.exe
+cfstd
+cfstd-arm64
+cfstd-amd64
 speedtest-cli
-```
+
+# Docker images
+*.tar
+*.tar.gz
+
+# Build artifacts
+dist/
+Releases/
+CloudflareSpeedTest*
+
+# Results
+*.csv
+
+# OS
+.DS_Store
+Thumbs.db
