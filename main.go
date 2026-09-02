@@ -213,6 +213,10 @@ func applyWebConfig(cfg *WSConfigRequest) {
 		conf.CurrentConfig.Routines = cfg.Routines
 		task.Routines = cfg.Routines
 	}
+	// 同步写入 config.toml 文件
+	if err := conf.SaveConfig(conf.CurrentConfig, ""); err != nil {
+		log.Printf("保存配置文件失败: %v", err)
+	}
 }
 
 func applySchedule(req *WSScheduleRequest) {
@@ -475,7 +479,48 @@ func setWebCallbacks() {
 
 func configHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(conf.CurrentConfig)
+
+	switch r.Method {
+	case http.MethodGet:
+		// 返回当前配置
+		json.NewEncoder(w).Encode(conf.CurrentConfig)
+
+	case http.MethodPost:
+		// 接收前端提交的配置并保存到 config.toml
+		var cfg conf.Config
+		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "请求解析失败"})
+			return
+		}
+		// 更新内存中的配置（保留敏感字段不被覆盖）
+		cfg.Alidns = conf.CurrentConfig.Alidns
+		cfg.Dnspod = conf.CurrentConfig.Dnspod
+		cfg.Cloudflare = conf.CurrentConfig.Cloudflare
+		cfg.Cfkv = conf.CurrentConfig.Cfkv
+		cfg.Cron = conf.CurrentConfig.Cron
+		if cfg.Gist.Token == "" {
+			cfg.Gist.Token = conf.CurrentConfig.Gist.Token
+		}
+		if cfg.Gist.Enable == false && conf.CurrentConfig.Gist.Enable == true {
+			cfg.Gist.Enable = true
+		}
+		conf.CurrentConfig = &cfg
+		conf.ApplyConfig(&cfg)
+
+		// 写入 config.toml
+		if err := conf.SaveConfig(conf.CurrentConfig, ""); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "保存配置失败: " + err.Error()})
+			return
+		}
+		log.Println("✅ 配置已通过 Web API 保存到 config.toml")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "仅支持 GET/POST"})
+	}
 }
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
@@ -616,8 +661,13 @@ https://github.com/Lyxot/CloudflareSpeedTestDNS
 	} else {
 		config, err = conf.LoadConfig("config.toml")
 		if err != nil {
-			utils.LogWarn("加载配置文件 [config.toml] 失败: %v，改用默认配置", err)
+			utils.LogInfo("配置文件 config.toml 不存在，将使用默认配置并自动创建该文件")
 			config = conf.CreateDefaultConfig()
+			conf.ConfigFilePath = "config.toml"
+			// 首次启动自动生成 config.toml
+			if saveErr := conf.SaveConfig(config, "config.toml"); saveErr != nil {
+				utils.LogWarn("自动生成 config.toml 失败: %v", saveErr)
+			}
 		}
 	}
 

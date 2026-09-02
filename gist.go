@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -21,12 +22,16 @@ const (
 )
 
 // getGistIDFile 返回 Gist ID 持久化文件路径
-// 优先环境变量 GIST_ID_FILE，默认 /app/data/.gist_id（Docker 挂载目录）
+// 优先环境变量 GIST_ID_FILE，默认为当前运行目录下的 .gist_id
 func getGistIDFile() string {
 	if v := os.Getenv("GIST_ID_FILE"); v != "" {
 		return v
 	}
-	return "/app/data/.gist_id"
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ".gist_id"
+	}
+	return filepath.Join(cwd, ".gist_id")
 }
 
 type GistFile struct {
@@ -53,14 +58,9 @@ func readGistID() string {
 	return strings.TrimSpace(string(data))
 }
 
-// saveGistID 保存 Gist ID 到本地文件（自动创建目录）
+// saveGistID 保存 Gist ID 到本地文件
 func saveGistID(id string) {
 	f := getGistIDFile()
-	dir := f[:strings.LastIndex(f, "/")]
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		fmt.Printf("ERROR: 创建 Gist ID 目录失败: %v (路径: %s)\n", err, f)
-		return
-	}
 	if err := os.WriteFile(f, []byte(id), 0644); err != nil {
 		fmt.Printf("ERROR: 保存 Gist ID 失败: %v (路径: %s)\n", err, f)
 		return

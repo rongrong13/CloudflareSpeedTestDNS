@@ -894,8 +894,9 @@ function showToast(msg, type){
     setTimeout(function(){ if(div.parentNode) div.remove() }, 1600);
 }
 
-/* ========== Config Persistence (localStorage) ========== */
+/* ========== Config Persistence (localStorage + 服务器 config.toml) ========== */
 var CONFIG_KEY = 'cfstd_config';
+var _saveTimer = null;
 function saveCfg(){
     var cfg = {
         delay: $('cDelay').value,
@@ -910,6 +911,24 @@ function saveCfg(){
         autoScroll: $('autoScroll').checked
     };
     try { localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg)); } catch(e){}
+    // 防抖：300ms 内多次修改只保存一次到服务器 config.toml
+    clearTimeout(_saveTimer);
+    _saveTimer = setTimeout(function(){ saveCfgToServer(); }, 300);
+}
+function saveCfgToServer(){
+    var body = {
+        routines: parseInt($('cRoutines').value) || 200,
+        max_delay: parseInt($('cDelay').value) || 3000,
+        min_speed: parseFloat($('cSpeed').value) || 0,
+        test_count: parseInt($('cCount').value) || 100,
+        print_num: parseInt($('cPrint').value) || 50,
+        disable_download: $('cDisableDL').value === '1'
+    };
+    fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    }).catch(function(e){ console.error('保存配置到服务器失败:', e); });
 }
 function loadCfg(){
     try {
@@ -927,6 +946,22 @@ function loadCfg(){
         if(cfg.autoScroll !== undefined){ $('autoScroll').checked = cfg.autoScroll; autoScrollEnabled = cfg.autoScroll; }
     } catch(e){}
 }
+function loadCfgFromServer(){
+    fetch('/api/config').then(function(r){ return r.json(); }).then(function(cfg){
+        if(!cfg) return;
+        // 用服务器 config.toml 的值覆盖本地表单（仅在本地无缓存时）
+        var local = null;
+        try { local = JSON.parse(localStorage.getItem(CONFIG_KEY)); } catch(e){}
+        if(!local || !local.delay){
+            if(cfg.routines > 0) $('cRoutines').value = cfg.routines;
+            if(cfg.max_delay > 0) $('cDelay').value = cfg.max_delay;
+            if(cfg.min_speed >= 0) $('cSpeed').value = cfg.min_speed;
+            if(cfg.test_count > 0) $('cCount').value = cfg.test_count;
+            if(cfg.print_num > 0) $('cPrint').value = cfg.print_num;
+            if(cfg.disable_download) $('cDisableDL').value = '1';
+        }
+    }).catch(function(){});
+}
 // Auto-save config on change
 document.querySelectorAll('.controls input, .controls select').forEach(function(el){
     el.addEventListener('change', saveCfg);
@@ -939,6 +974,7 @@ document.getElementById('schedInterval').addEventListener('change', saveCfg);
 /* ========== Init ========== */
 initTheme();
 loadCfg();
+loadCfgFromServer();
 refreshHistoryList();
 connect();
 </script>

@@ -26,6 +26,7 @@ var (
 	MinNum            int
 	MaxAttempts       int
 	CurrentConfig     *Config
+	ConfigFilePath    string // 当前配置文件路径（用于回写）
 )
 
 // Config 配置文件结构体
@@ -155,7 +156,32 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	CurrentConfig = config
+	ConfigFilePath = path
 	return config, nil
+}
+
+// SaveConfig 将当前配置写回 TOML 文件
+func SaveConfig(config *Config, path string) error {
+	if path == "" {
+		path = ConfigFilePath
+	}
+	if path == "" {
+		return fmt.Errorf("未指定配置文件路径")
+	}
+
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("创建配置文件失败: %v", err)
+	}
+	defer f.Close()
+
+	encoder := toml.NewEncoder(f)
+	encoder.Indent = ""
+	if err := encoder.Encode(config); err != nil {
+		return fmt.Errorf("编码配置文件失败: %v", err)
+	}
+
+	return nil
 }
 
 // CreateDefaultConfig 创建默认配置

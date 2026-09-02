@@ -13,6 +13,7 @@ services:
       - ./data:/app/data   # 持久化 Gist ID 等数据
     environment:
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GIST_ID_FILE=/app/data/.gist_id
       - TZ=Asia/Shanghai
 
 networks:
