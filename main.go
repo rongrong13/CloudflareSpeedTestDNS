@@ -343,12 +343,24 @@ func runWebSpeedTest() {
 		}
 		results = append(results, Result{
 			IP: d.IP.String(), Sent: d.Transmitted, Received: d.Received,
-			LossRate: lr, AvgLatency: float64(d.Delay / time.Millisecond),
+			LossRate: lr, AvgLatency: float64(d.Delay) / float64(time.Millisecond),
 			DownloadSpeed: d.DownloadSpeed / 1024 / 1024, Region: d.Colo,
 		})
 	}
 	log.Printf("✅ 测速完成，共 %d 个结果\n", len(results))
 	updateProgressFull("完成", len(results), len(results), len(results), 0, results)
+
+	// Web 模式也自动上传 Gist（与 CLI 模式行为一致）
+	gistToken := conf.GistToken
+	if gistToken == "" {
+		gistToken = os.Getenv("GITHUB_TOKEN")
+	}
+	if conf.EnableGist || gistToken != "" {
+		go func() {
+			utils.LogInfo("正在上传测速结果到 Gist...")
+			uploadResultsIfNeeded(gistToken)
+		}()
+	}
 }
 
 func sendProgress(conn *websocket.Conn) {
@@ -465,7 +477,7 @@ func setWebCallbacks() {
 			}
 			results = append(results, Result{
 				IP: d.IP.String(), Sent: d.Transmitted, Received: d.Received,
-				LossRate: lr, AvgLatency: float64(d.Delay / time.Millisecond),
+				LossRate: lr, AvgLatency: float64(d.Delay) / float64(time.Millisecond),
 				DownloadSpeed: d.DownloadSpeed / 1024 / 1024, Region: d.Colo,
 			})
 		}
@@ -749,7 +761,7 @@ func singleSpeedTest(ipVersion string, progressCallback task.ProgressCallback) (
 				Sent:          data.Transmitted,
 				Received:      data.Received,
 				LossRate:      lossRate,
-				AvgLatency:    float64(data.Delay / time.Millisecond),
+				AvgLatency:    float64(data.Delay) / float64(time.Millisecond),
 				DownloadSpeed: data.DownloadSpeed / 1024 / 1024,
 				Region:        data.Colo,
 			})
