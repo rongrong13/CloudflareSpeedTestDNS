@@ -20,3 +20,7 @@ CloudflareSpeedTest*
 # OS
 .DS_Store
 Thumbs.db
+
+# Runtime data
+.gist_id
+config.toml
