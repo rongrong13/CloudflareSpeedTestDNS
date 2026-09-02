@@ -8,7 +8,6 @@ import (
 	"github.com/cloudflare/cloudflare-go"
 )
 
-// CloudflareConfig Cloudflare DNS配置
 type cloudflareConfig struct {
 	APIToken  string `toml:"api_token"` // Cloudflare API Token
 	ZoneID    string `toml:"zone_id"`   // Cloudflare Zone ID
