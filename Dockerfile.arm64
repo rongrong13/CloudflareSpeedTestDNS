@@ -1,0 +1,15 @@
+FROM alpine:3.20
+
+RUN apk --no-cache add ca-certificates tzdata
+
+ENV TZ=Asia/Shanghai
+
+WORKDIR /app
+
+COPY cfstd-arm64 ./cfstd
+COPY ip.txt ./ip.txt
+COPY ipv6.txt ./ipv6.txt
+
+EXPOSE 8080
+
+CMD ["./cfstd", "-web"]

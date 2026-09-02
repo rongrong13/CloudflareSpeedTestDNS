@@ -1,0 +1,17 @@
+.git
+.github
+*.tar
+*.zip
+*.exe
+*.bat
+*.csv
+.DS_Store
+dist
+Releases
+cfstd-web.tar
+build.bat
+save.bat
+README.md
+RELEASE_NOTES.md
+LICENSE
+conf/env.md

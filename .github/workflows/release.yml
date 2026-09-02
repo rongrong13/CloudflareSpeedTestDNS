@@ -1,0 +1,239 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.output.outputs.tag }}
+      commit: ${{ steps.output.outputs.commit }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Generate PGO data
+        env:
+          CFSTD_PING_TIMES: 10
+          CFSTD_HTTPING: true
+          CFSTD_TEST_COUNT: 30
+          CFSTD_URL: ${{ secrets.CFSTD_URL }}
+          CFSTD_MIN_SPEED: 5
+        run: |
+          go run . -pgo
+          mv cpu.pprof default.pgo
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pgo
+          path: default.pgo
+
+      - name: Output
+        id: output
+        run: |
+          echo "tag=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
+          echo "commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+  build-release:
+    name: Build Release
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: darwin
+            goarch: amd64
+            artifact_name: cfstd-macos-x86_64
+          - goos: darwin
+            goarch: arm64
+            artifact_name: cfstd-macos-aarch64
+          - goos: linux
+            goarch: "386"
+            artifact_name: cfstd-linux-x86
+          - goos: linux
+            goarch: amd64
+            artifact_name: cfstd-linux-x86_64
+          - goos: linux
+            goarch: arm64
+            artifact_name: cfstd-linux-aarch64
+          - goos: linux
+            goarch: arm
+            goarm: "7"
+            artifact_name: cfstd-linux-armv7
+          - goos: linux
+            goarch: arm
+            artifact_name: cfstd-linux-arm
+          - goos: linux
+            goarch: loong64
+            artifact_name: cfstd-linux-loongarch64
+          - goos: linux
+            goarch: riscv64
+            artifact_name: cfstd-linux-riscv64
+          - goos: linux
+            goarch: mips
+            gomips: softfloat
+            artifact_name: cfstd-linux-mips
+          - goos: linux
+            goarch: mips64
+            gomips: softfloat
+            artifact_name: cfstd-linux-mips64
+          - goos: linux
+            goarch: mipsle
+            gomips: softfloat
+            artifact_name: cfstd-linux-mipsle
+          - goos: linux
+            goarch: mips64le
+            gomips: softfloat
+            artifact_name: cfstd-linux-mips64le
+          - goos: windows
+            goarch: "386"
+            artifact_name: cfstd-windows-x86
+          - goos: windows
+            goarch: amd64
+            artifact_name: cfstd-windows-x86_64
+          - goos: windows
+            goarch: arm64
+            artifact_name: cfstd-windows-arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Download pgo data
+        uses: actions/download-artifact@v5
+        with:
+          name: pgo
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - id: o
+        run: |
+          if [ ${{ matrix.goos }} = 'windows' ]; then
+            echo "file_name=cfstd.exe" >> $GITHUB_OUTPUT
+          else
+            echo "file_name=cfstd" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          GOMIPS: ${{ matrix.gomips }}
+        run: go build -v -o ${{ steps.o.outputs.file_name }} -ldflags="-s -w -X main.version=${{ needs.prepare.outputs.version }} -X main.gitCommit=${{ needs.prepare.outputs.commit }}"
+
+      - name: Package
+        run: |
+          mv conf/config.example.toml config.example.toml
+          zip ${{ matrix.artifact_name }}-${{ needs.prepare.outputs.version }}.zip ${{ steps.o.outputs.file_name }} ip.txt ipv6.txt config.example.toml LICENSE
+          ls -R
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: cfstd-*.zip
+
+  release:
+    name: Release
+    needs: [prepare, build-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: release-assets
+          pattern: cfstd-*
+          merge-multiple: true
+
+      - name: Update RELEASE_NOTES.md
+        run: sed -i "s/__VERSION__/${{ needs.prepare.outputs.version }}/g" RELEASE_NOTES.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.version }}
+          body_path: RELEASE_NOTES.md
+          files: release-assets/*.zip
+
+  docker:
+    name: Build and push Docker image
+    needs: [prepare, build-release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: release-assets
+          pattern: cfstd-*
+          merge-multiple: true
+
+      - name: Unzip artifacts
+        run: |
+          cd release-assets
+          unzip -d 386 cfstd-linux-x86-${{ needs.prepare.outputs.version }}.zip
+          unzip -d amd64 cfstd-linux-x86_64-${{ needs.prepare.outputs.version }}.zip
+          unzip -d armv7 cfstd-linux-armv7-${{ needs.prepare.outputs.version }}.zip
+          unzip -d armv8 cfstd-linux-aarch64-${{ needs.prepare.outputs.version }}.zip
+          unzip -d riscv64 cfstd-linux-riscv64-${{ needs.prepare.outputs.version }}.zip
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            lyxot/cfstd
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.prepare.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.prepare.outputs.version }}
+            type=semver,pattern={{major}},value=${{ needs.prepare.outputs.version }}
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/386,linux/amd64,linux/arm/v7,linux/arm64/v8,linux/riscv64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CloudflareSpeedTestDNS</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+<style>
+/* ========== CSS Variables / Theme ========== */
+:root {
+    --primary: #f0883e;
+    --primary-hover: #d2782f;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --error: #ef4444;
+    --info: #3b82f6;
+    --bg: #f0f2f5;
+    --card: #ffffff;
+    --text: #1f2937;
+    --text2: #6b7280;
+    --border: #e5e7eb;
+    --border2: #d1d5db;
+    --radius: 12px;
+    --shadow: 0 4px 24px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+    --log-bg: #0d1117;
+    --log-fg: #8b949e;
+}
+.dark {
+    --primary: #f0883e;
+    --primary-hover: #fb923c;
+    --bg: #0f172a;
+    --card: #1e293b;
+    --text: #f1f5f9;
+    --text2: #94a3b8;
+    --border: #334155;
+    --border2: #475569;
+    --shadow: 0 4px 24px rgba(0,0,0,0.3);
+    --log-bg: #010409;
+    --log-fg: #7ee787;
+}
+
+/* ========== Reset & Base ========== */
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans SC",sans-serif;background:var(--bg);color:var(--text);line-height:1.6;padding:16px;transition:background .3s,color .3s}
+
+/* ========== Layout ========== */
+.container{max-width:1200px;margin:0 auto;background:var(--card);border-radius:var(--radius);padding:24px;box-shadow:var(--shadow);border:1px solid var(--border);position:relative;transition:background .3s,border-color .3s}
+
+/* ========== Header ========== */
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px}
+.header h1{font-size:1.4rem;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px}
+.header h1 span{font-size:1.2em}
+.conn-badge{display:inline-flex;align-items:center;gap:6px;font-size:.75rem;padding:4px 10px;border-radius:20px;background:var(--bg);border:1px solid var(--border);color:var(--text2);font-weight:500}
+.conn-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.conn-dot.on{background:var(--success);box-shadow:0 0 6px var(--success)}
+.conn-dot.off{background:var(--error);box-shadow:0 0 6px var(--error)}
+.conn-dot.wait{background:var(--warning);animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ========== Theme Toggle ========== */
+.theme-toggle{display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:3px}
+.theme-btn{padding:5px 10px;border:none;border-radius:6px;cursor:pointer;font-size:.75rem;font-weight:500;background:transparent;color:var(--text2);transition:all .2s}
+.theme-btn.active{background:var(--primary);color:#fff}
+.theme-btn:hover:not(.active){background:var(--border)}
+
+/* ========== Status Bar ========== */
+.status-bar{padding:12px 16px;border-radius:8px;font-size:.85rem;margin-bottom:16px;display:flex;align-items:center;gap:8px;border-left:4px solid var(--success);background:#ecfdf5;color:#065f46;transition:all .3s}
+.status-bar.idle{border-left-color:var(--info);background:#eff6ff;color:#1e40af}
+.status-bar.running{border-left-color:var(--warning);background:#fffbeb;color:#92400e}
+.status-bar.error{border-left-color:var(--error);background:#fef2f2;color:#991b1b}
+.status-bar b{font-weight:600}
+
+/* ========== Controls ========== */
+.controls{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;align-items:end;transition:background .3s,border-color .3s}
+.form-group{display:flex;flex-direction:column;gap:5px}
+.form-group label{font-size:.75rem;color:var(--text2);font-weight:500;text-transform:uppercase;letter-spacing:.3px}
+.form-group input,.form-group select{padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:.85rem;background:var(--card);color:var(--text);outline:none;transition:border-color .2s,box-shadow .2s;width:100%}
+.form-group input:focus,.form-group select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(240,136,62,0.15)}
+
+/* ========== Buttons ========== */
+.btn{padding:10px 20px;border:none;border-radius:8px;cursor:pointer;font-size:.85rem;font-weight:600;transition:all .2s;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover:not(:disabled){background:var(--primary-hover)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn-outline{background:transparent;color:var(--text);border:1px solid var(--border)}
+.btn-outline:hover{border-color:var(--primary);color:var(--primary)}
+.btn-sm{padding:6px 12px;font-size:.75rem;border-radius:6px}
+.btn-success{background:var(--success);color:#fff}
+.btn-success:hover{opacity:.9}
+
+.start-area{grid-column:1/-1;display:flex;gap:10px;flex-wrap:wrap}
+
+/* ========== Progress Bar ========== */
+.progress-wrap{margin-bottom:16px;display:none}
+.progress-bar{width:100%;height:22px;background:var(--border);border-radius:11px;overflow:hidden;position:relative}
+.progress-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--primary),#fb923c,var(--primary));background-size:200% 100%;animation:shimmer 2s linear infinite;border-radius:11px;transition:width .3s;display:flex;align-items:center;justify-content:center;color:#fff;font-size:.7rem;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,.3)}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* ========== Schedule Card ========== */
+.schedule-card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;transition:background .3s,border-color .3s}
+.schedule-card label{font-size:.8rem;color:var(--text2);display:flex;align-items:center;gap:6px}
+.schedule-card input[type=checkbox]{width:16px;height:16px;accent-color:var(--primary)}
+.schedule-card select{padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:.8rem;background:var(--card);color:var(--text)}
+.schedule-info{font-size:.78rem;color:var(--text2);margin-left:auto}
+
+/* ========== Table ========== */
+.table-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+.table-header h3{font-size:1rem;font-weight:600;display:flex;align-items:center;gap:8px}
+.badge{background:var(--primary);color:#fff;padding:2px 8px;border-radius:12px;font-size:.7rem;font-weight:600}
+.filter-bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.filter-bar input{padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:.78rem;background:var(--card);color:var(--text);width:110px;outline:none}
+.filter-bar input:focus{border-color:var(--primary)}
+
+.table-wrap{max-height:50vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;margin-bottom:16px}
+.table-wrap::-webkit-scrollbar{width:6px}
+.table-wrap::-webkit-scrollbar-track{background:transparent}
+.table-wrap::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+th{background:var(--bg);color:var(--text2);padding:10px 14px;text-align:left;border-bottom:2px solid var(--border);position:sticky;top:0;z-index:1;font-weight:600;font-size:.75rem;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;user-select:none;white-space:nowrap}
+th:hover{color:var(--primary)}
+th .sort-arrow{opacity:.4;margin-left:4px;font-size:.65rem}
+th.sorted .sort-arrow{opacity:1;color:var(--primary)}
+td{padding:9px 14px;border-bottom:1px solid var(--border)}
+tr:hover td{background:var(--bg)}
+tr:last-child td{border-bottom:none}
+
+.ip-cell{font-family:"SF Mono",Monaco,Consolas,monospace;font-weight:500;color:var(--primary);cursor:pointer;position:relative}
+.ip-cell:hover{text-decoration:underline}
+.speed-fast{color:var(--success);font-weight:600}
+.speed-mid{color:var(--info);font-weight:500}
+.speed-slow{color:var(--text2)}
+.loss-ok{color:var(--success);font-weight:500}
+.loss-bad{color:var(--error);font-weight:500}
+.latency-good{color:var(--success)}
+.latency-mid{color:var(--warning)}
+.latency-bad{color:var(--error)}
+
+.copy-btn{padding:3px 8px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--info);cursor:pointer;font-size:.72rem;transition:all .2s}
+.copy-btn:hover{border-color:var(--info);background:rgba(59,130,246,0.08)}
+
+/* ========== Empty State ========== */
+.empty{text-align:center;padding:50px 20px;color:var(--text2)}
+.empty-icon{font-size:3rem;margin-bottom:12px;opacity:.5}
+.empty-text{font-size:.9rem}
+
+/* ========== Log Box ========== */
+.log-section{margin-top:4px}
+.log-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.log-header h3{font-size:.9rem;font-weight:600;color:var(--text2)}
+.log-box{height:220px;overflow-y:auto;background:var(--log-bg);color:var(--log-fg);padding:14px;border-radius:8px;font-family:'SF Mono',Monaco,Consolas,'Courier New',monospace;font-size:.75rem;line-height:1.6;box-shadow:inset 0 2px 8px rgba(0,0,0,.2);scroll-behavior:smooth}
+.log-box::-webkit-scrollbar{width:6px}
+.log-box::-webkit-scrollbar-track{background:transparent}
+.log-box::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px}
+.log-line{white-space:pre-wrap;word-break:break-all}
+.log-time{opacity:.5;margin-right:6px}
+.log-warn{color:#f0883e}
+.log-err{color:#f85149}
+.log-ok{color:#3fb950}
+.log-info{color:#8b949e}
+
+/* ========== Toast ========== */
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);padding:8px 20px;border-radius:8px;font-size:.82rem;font-weight:600;z-index:9999;animation:toastIn .3s ease,toastOut .3s ease 1.2s forwards;pointer-events:none}
+.toast-success{background:var(--success);color:#fff}
+.toast-info{background:var(--info);color:#fff}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(-10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+@keyframes toastOut{from{opacity:1}to{opacity:0}}
+
+/* ========== Gist Card ========== */
+.gist-card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;transition:background .3s,border-color .3s}
+.gist-card .gist-info{font-size:.78rem;color:var(--text2);flex:1}
+
+/* ========== Responsive ========== */
+@media(max-width:768px){
+    body{padding:10px}
+    .container{padding:16px}
+    .header h1{font-size:1.1rem}
+    .controls{grid-template-columns:1fr 1fr;padding:14px}
+    .start-area{flex-direction:column}
+    .start-area .btn{width:100%}
+    th,td{padding:8px 10px;font-size:.78rem}
+    .schedule-card{flex-direction:column;align-items:flex-start}
+    .schedule-info{margin-left:0}
+}
+@media(max-width:480px){
+    .controls{grid-template-columns:1fr}
+    .filter-bar{flex-direction:column}
+    .filter-bar input{width:100%}
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+    <!-- Header -->
+    <div class="header">
+        <h1><span>⚡</span> CloudflareSpeedTestDNS</h1>
+        <div style="display:flex;align-items:center;gap:10px">
+            <div class="conn-badge">
+                <span class="conn-dot wait" id="connDot"></span>
+                <span id="connText">连接中...</span>
+            </div>
+            <div class="theme-toggle">
+                <button class="theme-btn" onclick="setTheme('light')" id="tLight">☀️</button>
+                <button class="theme-btn" onclick="setTheme('dark')" id="tDark">🌙</button>
+                <button class="theme-btn" onclick="setTheme('auto')" id="tAuto">🔄</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Bar -->
+    <div class="status-bar idle" id="statusBar">
+        <span id="statusText">⏳ 等待操作</span>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+        <div class="form-group">
+            <label>最大延迟 (ms)</label>
+            <input type="number" id="cDelay" value="9999" min="0">
+        </div>
+        <div class="form-group">
+            <label>最低速度 (MB/s)</label>
+            <input type="number" id="cSpeed" value="0" step="0.1" min="0">
+        </div>
+        <div class="form-group">
+            <label>测速数量</label>
+            <input type="number" id="cCount" value="10" min="1">
+        </div>
+        <div class="form-group">
+            <label>结果显示</label>
+            <input type="number" id="cPrint" value="50" min="1" max="200">
+        </div>
+        <div class="form-group">
+            <label>禁用下载</label>
+            <select id="cDisableDL">
+                <option value="0">否</option>
+                <option value="1">是</option>
+            </select>
+        </div>
+        <div class="start-area">
+            <button class="btn btn-primary" id="btnStart" onclick="startTest()">▶ 开始测速</button>
+            <button class="btn btn-outline" id="btnStop" onclick="stopTest()" style="display:none;background:var(--error);color:#fff;border-color:var(--error)">⏹ 停止</button>
+            <button class="btn btn-outline" onclick="copyFilteredIPs()">📋 复制筛选IP</button>
+            <button class="btn btn-outline" onclick="copyAllIPs()">📋 复制全部IP</button>
+            <button class="btn btn-outline btn-sm" onclick="clearLog()">🗑 清空日志</button>
+        </div>
+    </div>
+
+    <!-- Progress Bar -->
+    <div class="progress-wrap" id="progressWrap">
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill">0%</div>
+        </div>
+    </div>
+
+    <!-- Schedule -->
+    <div class="schedule-card">
+        <label>
+            <input type="checkbox" id="schedEnable" onchange="toggleSchedule()">
+            定时测速
+        </label>
+        <label>
+            间隔
+            <select id="schedInterval" onchange="toggleSchedule()">
+                <option value="1">1 小时</option>
+                <option value="2">2 小时</option>
+                <option value="3">3 小时</option>
+                <option value="6" selected>6 小时</option>
+                <option value="12">12 小时</option>
+                <option value="24">24 小时</option>
+            </select>
+        </label>
+        <span class="schedule-info" id="schedInfo">定时未开启</span>
+    </div>
+
+    <!-- Gist -->
+    <div class="gist-card">
+        <button class="btn btn-success btn-sm" onclick="uploadGist()">📤 上传 Gist</button>
+        <span class="gist-info" id="gistInfo">测速完成后可一键上传 IP 列表到 GitHub Gist</span>
+    </div>
+
+    <!-- Results Table -->
+    <div class="table-header">
+        <h3>📊 测速结果 <span class="badge" id="resultCount">0</span></h3>
+        <div class="filter-bar">
+            <input id="fIP" placeholder="🔍 IP 地址" oninput="applyFilter()">
+            <input id="fLatency" type="number" placeholder="延迟 ≤ ms" oninput="applyFilter()">
+            <input id="fSpeed" type="number" placeholder="速度 ≥ MB/s" step="0.1" oninput="applyFilter()">
+            <button class="btn btn-outline btn-sm" onclick="clearFilter()">清除筛选</button>
+        </div>
+    </div>
+    <div class="table-wrap" id="tableWrap">
+        <table>
+            <thead>
+                <tr>
+                    <th onclick="sortTable(0)" data-col="0">IP 地址 <span class="sort-arrow">▲</span></th>
+                    <th onclick="sortTable(1)" data-col="1">延迟 (ms) <span class="sort-arrow">▲</span></th>
+                    <th onclick="sortTable(2)" data-col="2">速度 (MB/s) <span class="sort-arrow">▲</span></th>
+                    <th onclick="sortTable(3)" data-col="3">丢包率 <span class="sort-arrow">▲</span></th>
+                    <th onclick="sortTable(4)" data-col="4">地区 <span class="sort-arrow">▲</span></th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+        </table>
+    </div>
+    <div class="empty" id="emptyState">
+        <div class="empty-icon">📡</div>
+        <div class="empty-text">暂无数据，点击「开始测速」</div>
+    </div>
+
+    <!-- Log -->
+    <div class="log-section">
+        <div class="log-header">
+            <h3>📝 运行日志</h3>
+            <span style="font-size:.72rem;color:var(--text2)" id="logCount">0 条</span>
+        </div>
+        <div class="log-box" id="logBox"></div>
+    </div>
+</div>
+
+<script>
+/* ========== State ========== */
+var ws, reconnTimer, allResults = [], filteredResults = [];
+var sortCol = -1, sortAsc = true, logLines = 0;
+var isRunning = false;
+
+/* ========== Utils ========== */
+function $(id){ return document.getElementById(id) }
+function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+
+/* ========== Theme ========== */
+function setTheme(t){
+    localStorage.setItem('theme', t);
+    document.querySelectorAll('.theme-btn').forEach(function(b){ b.classList.remove('active') });
+    if(t === 'dark'){
+        document.body.classList.add('dark');
+        $('tDark').classList.add('active');
+    } else if(t === 'light'){
+        document.body.classList.remove('dark');
+        $('tLight').classList.add('active');
+    } else {
+        // auto
+        $('tAuto').classList.add('active');
+        if(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches){
+            document.body.classList.add('dark');
+        } else {
+            document.body.classList.remove('dark');
+        }
+    }
+}
+function initTheme(){
+    var saved = localStorage.getItem('theme') || 'auto';
+    setTheme(saved);
+}
+if(window.matchMedia){
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(){
+        if(localStorage.getItem('theme') === 'auto') setTheme('auto');
+    });
+}
+
+/* ========== WebSocket ========== */
+function connect(){
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(proto + '//' + location.host + '/ws');
+    
+    ws.onopen = function(){
+        $('connDot').className = 'conn-dot on';
+        $('connText').textContent = '已连接';
+        // Send current config
+        wsSend('config', getCfg());
+    };
+    
+    ws.onclose = function(){
+        $('connDot').className = 'conn-dot off';
+        $('connText').textContent = '重连中...';
+        clearTimeout(reconnTimer);
+        reconnTimer = setTimeout(connect, 2000);
+    };
+    
+    ws.onerror = function(){ ws.close() };
+    
+    ws.onmessage = function(e){
+        try { handleMessage(JSON.parse(e.data)) } catch(x){}
+    };
+}
+
+function wsSend(type, data){
+    if(ws && ws.readyState === 1){
+        ws.send(JSON.stringify({type: type, data: data}));
+    }
+}
+
+function getCfg(){
+    return {
+        max_delay: parseInt($('cDelay').value) || 9999,
+        min_speed: parseFloat($('cSpeed').value) || 0,
+        test_count: parseInt($('cCount').value) || 10,
+        print_num: parseInt($('cPrint').value) || 50,
+        disable_download: $('cDisableDL').value === '1'
+    };
+}
+
+/* ========== Message Handler ========== */
+function handleMessage(msg){
+    // Log message
+    if(msg.type === 'log'){
+        addLog(msg.msg);
+        return;
+    }
+    // Schedule state
+    if(msg.type === 'schedule'){
+        updateSchedule(msg);
+        return;
+    }
+    // Progress / Results (plain object with stage field)
+    if(msg.stage !== undefined){
+        updateProgress(msg);
+    }
+}
+
+/* ========== Progress ========== */
+function updateProgress(data){
+    var stage = data.stage || '';
+    var total = data.total || 0;
+    var current = data.current || 0;
+    var avail = data.available_ip || 0;
+    var results = data.results || [];
+    
+    if(stage.indexOf('完成') >= 0 || stage.indexOf('无结果') >= 0 || stage.indexOf('异常') >= 0 || stage.indexOf('停止') >= 0){
+        // Done
+        setRunning(false);
+        $('progressWrap').style.display = 'none';
+        setStatus('done', '✅ ' + stage + (results.length ? ' — 共 ' + results.length + ' 个结果' : ''));
+        if(results.length > 0){
+            allResults = results;
+            applyFilter();
+        }
+        return;
+    }
+    
+    // Running
+    if(!isRunning){
+        setRunning(true);
+    }
+    $('progressWrap').style.display = 'block';
+    
+    // Update progress bar
+    if(total > 0){
+        var pct = Math.round(current / total * 100);
+        $('progressFill').style.width = pct + '%';
+        $('progressFill').textContent = pct + '%';
+    }
+    
+    // Status text
+    var statusMsg = '🔄 ' + stage;
+    if(total > 0) statusMsg += '  ' + current + ' / ' + total;
+    if(avail > 0) statusMsg += '  可用: ' + avail;
+    setStatus('running', statusMsg);
+    
+    // Live results during download phase
+    if(results && results.length > 0){
+        allResults = results;
+        applyFilter();
+    }
+    
+    // Log progress
+    if(current % 50 === 0 || current === total){
+        addLog('[进度] ' + stage + ' ' + current + '/' + total + ' 可用:' + avail, 'info');
+    }
+}
+
+/* ========== Status Bar ========== */
+function setStatus(type, text){
+    var bar = $('statusBar');
+    bar.className = 'status-bar ' + type;
+    $('statusText').textContent = text;
+}
+
+/* ========== Schedule ========== */
+function toggleSchedule(){
+    var enabled = $('schedEnable').checked;
+    var interval = parseInt($('schedInterval').value) || 6;
+    wsSend('schedule', {enabled: enabled, interval: interval});
+}
+
+function updateSchedule(msg){
+    if(msg.enabled){
+        $('schedEnable').checked = true;
+        $('schedInterval').value = msg.interval || 6;
+        var next = msg.next_test || '';
+        $('schedInfo').textContent = '⏱ 下次: ' + next;
+    } else {
+        $('schedEnable').checked = false;
+        $('schedInfo').textContent = '定时未开启';
+    }
+}
+
+/* ========== Start / Stop Test ========== */
+function startTest(){
+    if(!ws || ws.readyState !== 1) return;
+    // Send config first
+    wsSend('config', getCfg());
+    // Clear previous results
+    allResults = [];
+    filteredResults = [];
+    $('tbody').innerHTML = '';
+    $('resultCount').textContent = '0';
+    $('emptyState').style.display = 'none';
+    // Start
+    wsSend('start', {});
+    setRunning(true);
+    addLog('[系统] 开始测速', 'ok');
+}
+
+function stopTest(){
+    if(!ws || ws.readyState !== 1) return;
+    wsSend('stop', {});
+    addLog('[系统] 已发送停止请求', 'warn');
+    setRunning(false);
+    setStatus('idle', '⏹ 已停止测速');
+}
+
+function setRunning(running){
+    isRunning = running;
+    $('btnStart').disabled = running;
+    $('btnStart').innerHTML = running ? '⏳ 测速中...' : '▶ 开始测速';
+    $('btnStop').style.display = running ? '' : 'none';
+    if(running){
+        $('progressWrap').style.display = 'block';
+        $('progressFill').style.width = '0%';
+        $('progressFill').textContent = '0%';
+        setStatus('running', '🔄 准备中...');
+    }
+}
+
+/* ========== Gist Upload ========== */
+function uploadGist(){
+    if(allResults.length === 0){
+        showToast('暂无结果可上传', 'info');
+        return;
+    }
+    // Build IP list (max 50)
+    var ips = [];
+    var data = filteredResults.length > 0 ? filteredResults : allResults;
+    for(var i = 0; i < Math.min(data.length, 50); i++){
+        ips.push(data[i].ip);
+    }
+    var content = ips.join('\n') + '\n';
+    
+    // Upload via server API
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/gist', true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.onreadystatechange = function(){
+        if(xhr.readyState === 4){
+            if(xhr.status === 200){
+                var resp = JSON.parse(xhr.responseText);
+                if(resp.url){
+                    showToast('✅ 上传成功', 'success');
+                    $('gistInfo').innerHTML = '✅ <a href="' + resp.url + '" target="_blank" style="color:var(--primary)">' + resp.url + '</a>';
+                } else {
+                    showToast('上传失败: ' + (resp.error || '未知错误'), 'info');
+                }
+            } else {
+                showToast('上传失败 (HTTP ' + xhr.status + ')', 'info');
+            }
+        }
+    };
+    xhr.send(JSON.stringify({content: content, count: ips.length}));
+}
+
+/* ========== Table / Filter / Sort ========== */
+function applyFilter(){
+    var ip = ($('fIP').value || '').toLowerCase();
+    var maxLat = parseFloat($('fLatency').value);
+    var minSpd = parseFloat($('fSpeed').value);
+    
+    filteredResults = allResults.filter(function(r){
+        if(ip && r.ip.toLowerCase().indexOf(ip) < 0) return false;
+        if(!isNaN(maxLat) && r.avg_latency > maxLat) return false;
+        if(!isNaN(minSpd) && r.download_speed < minSpd) return false;
+        return true;
+    });
+    
+    renderTable();
+}
+
+function clearFilter(){
+    $('fIP').value = '';
+    $('fLatency').value = '';
+    $('fSpeed').value = '';
+    filteredResults = [];
+    renderTable();
+}
+
+function sortTable(col){
+    if(sortCol === col){
+        sortAsc = !sortAsc;
+    } else {
+        sortCol = col;
+        sortAsc = true;
+    }
+    
+    // Update header indicators
+    document.querySelectorAll('th').forEach(function(th){
+        th.classList.remove('sorted');
+        th.querySelector('.sort-arrow').textContent = '▲';
+    });
+    var th = document.querySelectorAll('th')[col];
+    if(th){
+        th.classList.add('sorted');
+        th.querySelector('.sort-arrow').textContent = sortAsc ? '▲' : '▼';
+    }
+    
+    var keys = [
+        function(r){ return r.ip },
+        function(r){ return r.avg_latency },
+        function(r){ return r.download_speed },
+        function(r){ return r.loss_rate },
+        function(r){ return r.region || '' }
+    ];
+    
+    var data = filteredResults.length > 0 ? filteredResults : allResults;
+    data.sort(function(a, b){
+        var va = keys[col](a), vb = keys[col](b);
+        if(typeof va === 'string') return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+        return sortAsc ? va - vb : vb - va;
+    });
+    
+    renderTable();
+}
+
+function renderTable(){
+    var data = filteredResults.length > 0 ? filteredResults : allResults;
+    var tbody = $('tbody');
+    
+    if(data.length === 0){
+        tbody.innerHTML = '';
+        $('emptyState').style.display = '';
+        $('emptyState').querySelector('.empty-text').textContent = allResults.length ? '筛选无匹配结果' : '暂无数据，点击「开始测速」';
+        $('resultCount').textContent = '0';
+        return;
+    }
+    
+    $('emptyState').style.display = 'none';
+    $('resultCount').textContent = data.length;
+    
+    var html = '';
+    for(var i = 0; i < data.length; i++){
+        var r = data[i];
+        // Speed class
+        var spdCls = r.download_speed > 10 ? 'speed-fast' : r.download_speed > 2 ? 'speed-mid' : 'speed-slow';
+        // Loss class
+        var lossPct = (r.loss_rate * 100);
+        var lossCls = lossPct < 1 ? 'loss-ok' : 'loss-bad';
+        // Latency class
+        var latCls = r.avg_latency < 100 ? 'latency-good' : r.avg_latency < 300 ? 'latency-mid' : 'latency-bad';
+        
+        html += '<tr>';
+        html += '<td class="ip-cell" onclick="copyIP(\'' + esc(r.ip) + '\',this)" title="点击复制">' + esc(r.ip) + '</td>';
+        html += '<td class="' + latCls + '">' + r.avg_latency.toFixed(1) + '</td>';
+        html += '<td class="' + spdCls + '">' + r.download_speed.toFixed(2) + '</td>';
+        html += '<td class="' + lossCls + '">' + lossPct.toFixed(1) + '%</td>';
+        html += '<td>' + esc(r.region || '-') + '</td>';
+        html += '<td><button class="copy-btn" onclick="copyIP(\'' + esc(r.ip) + '\',this)">复制</button></td>';
+        html += '</tr>';
+    }
+    tbody.innerHTML = html;
+}
+
+/* ========== Copy ========== */
+function copyIP(ip, el){
+    navigator.clipboard.writeText(ip).then(function(){
+        showToast('已复制: ' + ip, 'success');
+    }).catch(function(){
+        fallbackCopy(ip);
+    });
+}
+
+function copyAllIPs(){
+    if(allResults.length === 0){ showToast('暂无数据', 'info'); return; }
+    var ips = allResults.map(function(r){ return r.ip }).join('\n');
+    navigator.clipboard.writeText(ips).then(function(){
+        showToast('已复制全部 ' + allResults.length + ' 个 IP', 'success');
+    }).catch(function(){ fallbackCopy(ips) });
+}
+
+function copyFilteredIPs(){
+    var data = filteredResults.length > 0 ? filteredResults : allResults;
+    if(data.length === 0){ showToast('暂无数据', 'info'); return; }
+    var ips = data.map(function(r){ return r.ip }).join('\n');
+    navigator.clipboard.writeText(ips).then(function(){
+        showToast('已复制 ' + data.length + ' 个 IP', 'success');
+    }).catch(function(){ fallbackCopy(ips) });
+}
+
+function fallbackCopy(text){
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('已复制', 'success');
+}
+
+/* ========== Log ========== */
+function addLog(msg, cls){
+    cls = cls || '';
+    var box = $('logBox');
+    var now = new Date();
+    var time = now.toLocaleTimeString('zh-CN', {hour12:false});
+    
+    // Auto-detect level
+    if(!cls){
+        if(msg.indexOf('WARN') >= 0 || msg.indexOf('warn') >= 0 || msg.indexOf('警告') >= 0) cls = 'warn';
+        else if(msg.indexOf('ERROR') >= 0 || msg.indexOf('error') >= 0 || msg.indexOf('错误') >= 0) cls = 'err';
+        else if(msg.indexOf('完成') >= 0 || msg.indexOf('DONE') >= 0 || msg.indexOf('✅') >= 0) cls = 'ok';
+    }
+    
+    var clsMap = {warn:'log-warn', err:'log-err', ok:'log-ok', info:'log-info'};
+    var lineCls = clsMap[cls] || '';
+    
+    var div = document.createElement('div');
+    div.className = 'log-line ' + lineCls;
+    div.innerHTML = '<span class="log-time">[' + time + ']</span>' + esc(msg);
+    box.appendChild(div);
+    
+    // Limit log lines
+    logLines++;
+    if(logLines > 500){
+        var first = box.firstChild;
+        if(first) box.removeChild(first);
+        logLines--;
+    }
+    
+    // Auto scroll
+    box.scrollTop = box.scrollHeight;
+    
+    // Update count
+    $('logCount').textContent = logLines + ' 条';
+}
+
+function clearLog(){
+    $('logBox').innerHTML = '';
+    logLines = 0;
+    $('logCount').textContent = '0 条';
+}
+
+/* ========== Toast ========== */
+function showToast(msg, type){
+    var old = document.querySelector('.toast');
+    if(old) old.remove();
+    var div = document.createElement('div');
+    div.className = 'toast toast-' + (type || 'info');
+    div.textContent = msg;
+    document.body.appendChild(div);
+    setTimeout(function(){ if(div.parentNode) div.remove() }, 1600);
+}
+
+/* ========== Init ========== */
+initTheme();
+connect();
+</script>
+</body>
+</html>

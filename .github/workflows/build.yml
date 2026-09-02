@@ -1,0 +1,99 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: darwin
+            goarch: amd64
+            artifact_name: cfstd-macos-x86_64
+          - goos: darwin
+            goarch: arm64
+            artifact_name: cfstd-macos-aarch64
+          - goos: linux
+            goarch: "386"
+            artifact_name: cfstd-linux-x86
+          - goos: linux
+            goarch: amd64
+            artifact_name: cfstd-linux-x86_64
+          - goos: linux
+            goarch: arm64
+            artifact_name: cfstd-linux-aarch64
+          - goos: linux
+            goarch: arm
+            goarm: "7"
+            artifact_name: cfstd-linux-armv7
+          - goos: linux
+            goarch: arm
+            artifact_name: cfstd-linux-arm
+          - goos: linux
+            goarch: loong64
+            artifact_name: cfstd-linux-loongarch64
+          - goos: linux
+            goarch: riscv64
+            artifact_name: cfstd-linux-riscv64
+          - goos: linux
+            goarch: mips
+            gomips: softfloat
+            artifact_name: cfstd-linux-mips
+          - goos: linux
+            goarch: mips64
+            gomips: softfloat
+            artifact_name: cfstd-linux-mips64
+          - goos: linux
+            goarch: mipsle
+            gomips: softfloat
+            artifact_name: cfstd-linux-mipsle
+          - goos: linux
+            goarch: mips64le
+            gomips: softfloat
+            artifact_name: cfstd-linux-mips64le
+          - goos: windows
+            goarch: "386"
+            artifact_name: cfstd-windows-x86
+          - goos: windows
+            goarch: amd64
+            artifact_name: cfstd-windows-x86_64
+          - goos: windows
+            goarch: arm64
+            artifact_name: cfstd-windows-arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Build
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          GOMIPS: ${{ matrix.gomips }}
+        run: |
+          if [ ${{ matrix.goos }} = 'windows' ]; then
+            go build -v -o cfstd.exe -ldflags="-s -w -X main.version=$(git describe --tags --abbrev=0)-dev -X main.gitCommit=$(git rev-parse --short HEAD)"
+          else
+            go build -v -o cfstd -ldflags="-s -w -X main.version=$(git describe --tags --abbrev=0)-dev -X main.gitCommit=$(git rev-parse --short HEAD)"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: cfstd*
