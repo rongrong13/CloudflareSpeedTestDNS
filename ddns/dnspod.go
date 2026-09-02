@@ -10,7 +10,6 @@ import (
 	dnspod "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/dnspod/v20210323"
 )
 
-// DNSPodConfig DNSPod DNS配置
 type dnspodConfig struct {
 	SecretID  string `toml:"secret_id"`  // DNSPod Secret ID
 	SecretKey string `toml:"secret_key"` // DNSPod Secret Key

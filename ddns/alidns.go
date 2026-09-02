@@ -9,6 +9,14 @@ import (
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/alidns"
 )
 
+// min 返回两个整数中的较小值 (Go 1.19 兼容)
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // AliDNSConfig 阿里云DNS配置
 type aliConfig struct {
 	AccessKeyID     string `toml:"accesskey_id"`     // 阿里云 Access Key ID

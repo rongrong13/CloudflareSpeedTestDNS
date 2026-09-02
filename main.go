@@ -3,7 +3,6 @@ package main
 import (
 	"embed"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -22,6 +21,21 @@ import (
 	"github.com/Lyxot/CloudflareSpeedTestDNS/utils"
 	"github.com/gorilla/websocket"
 )
+
+// joinErrors 连接多个错误 (Go 1.19 兼容 joinErrors)
+func joinErrors(errs ...error) error {
+	var resultErr error
+	for _, err := range errs {
+		if err != nil {
+			if resultErr == nil {
+				resultErr = err
+			} else {
+				resultErr = fmt.Errorf("%v; %w", resultErr, err)
+			}
+		}
+	}
+	return resultErr
+}
 
 //go:embed index.html
 var staticFiles embed.FS
@@ -667,7 +681,7 @@ func speedTest() ([]string, error) {
 		if testErr == nil {
 			ipData = append(ipData, ddnsSync(ipv6SpeedData)...)
 		} else {
-			err = errors.Join(err, testErr)
+			err = joinErrors(err, testErr)
 		}
 
 		task.IPv4File = origIPv4File
