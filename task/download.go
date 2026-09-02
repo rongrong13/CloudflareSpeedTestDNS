@@ -76,7 +76,7 @@ func TestDownloadSpeed(ipSet utils.PingDelaySet) (speedSet utils.DownloadSpeedSe
 		testCount = testNum
 	}
 
-	utils.LogInfo("开始下载测速（下限：%.2f MB/s, 数量：%d, 队列：%d）", MinSpeed, testCount, testNum)
+	utils.LogInfo("开始下载测速（下限：%.2f MB/s, 有效IP上限：%d, 队列：%d）", MinSpeed, testCount, testNum)
 	// 控制 下载测速进度条 与 延迟测速进度条 长度一致（强迫症）
 	barA := len(strconv.Itoa(len(ipSet)))
 	barB := "     "
